@@ -1,0 +1,302 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TIMBRE | Horario Escolar</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React y Babel (Ejecutan el código en el navegador sin necesidad de compilar) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tipografía Moderna -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Outfit', sans-serif; }
+        @keyframes ring {
+            0%, 100% { transform: rotate(0); }
+            20% { transform: rotate(15deg); }
+            40% { transform: rotate(-15deg); }
+            60% { transform: rotate(10deg); }
+            80% { transform: rotate(-10deg); }
+        }
+        .animate-ring { animation: ring 0.5s ease-in-out infinite; display: inline-block; }
+        .clock-shadow { text-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react/": "https://esm.sh/react@^19.2.3/"
+  }
+}
+</script>
+</head>
+<body class="bg-slate-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        // --- CONFIGURACIÓN DE HORARIOS ---
+        const DAILY_SCHEDULE = [
+            { time: "08:25", event: "AVISO", durationSeconds: 10 },
+            { time: "08:30", event: "ENTRADA", durationSeconds: 15 },
+            { time: "09:20", event: "AVISO", durationSeconds: 10 },
+            { time: "09:25", event: "ENTRADA", durationSeconds: 15 },
+            { time: "10:15", event: "AVISO", durationSeconds: 10 },
+            { time: "10:20", event: "ENTRADA", durationSeconds: 15 },
+            { time: "11:10", event: "SALIDA RECREO", durationSeconds: 15 },
+            { time: "11:35", event: "AVISO fin recreo", durationSeconds: 10 },
+            { time: "11:40", event: "ENTRADA", durationSeconds: 15 },
+            { time: "12:30", event: "AVISO", durationSeconds: 10 },
+            { time: "12:35", event: "ENTRADA", durationSeconds: 15 },
+            { time: "13:25", event: "AVISO", durationSeconds: 10 },
+            { time: "13:30", event: "ENTRADA", durationSeconds: 15 },
+            { time: "14:20", event: "AVISO", durationSeconds: 10 },
+            { time: "14:25", event: "ENTRADA", durationSeconds: 15 },
+            { time: "15:15", event: "FIN JORNADA (mañana)", durationSeconds: 15 },
+            { time: "15:55", event: "AVISO", durationSeconds: 10 },
+            { time: "16:00", event: "ENTRADA", durationSeconds: 15 },
+            { time: "16:50", event: "AVISO", durationSeconds: 10 },
+            { time: "16:55", event: "ENTRADA", durationSeconds: 15 },
+            { time: "17:45", event: "AVISO", durationSeconds: 10 },
+            { time: "17:50", event: "ENTRADA", durationSeconds: 15 },
+            { time: "18:40", event: "SALIDA RECREO (tarde)", durationSeconds: 15 },
+            { time: "18:55", event: "AVISO fin recreo (tarde)", durationSeconds: 10 },
+            { time: "19:00", event: "ENTRADA (tarde)", durationSeconds: 15 },
+            { time: "19:50", event: "AVISO", durationSeconds: 10 },
+            { time: "19:55", event: "ENTRADA", durationSeconds: 15 },
+            { time: "20:45", event: "AVISO", durationSeconds: 10 },
+            { time: "20:50", event: "ENTRADA", durationSeconds: 15 },
+            { time: "21:40", event: "FIN JORNADA (tarde)", durationSeconds: 15 },
+        ];
+
+        const HOLIDAY_RANGES = [
+            { name: "NAVIDAD", start: "2025-12-20", end: "2026-01-07" },
+            { name: "CARNAVAL", start: "2026-02-16", end: "2026-02-17" },
+            { name: "SEMANA SANTA", start: "2026-03-27", end: "2026-04-06" },
+        ];
+
+        const SINGLE_HOLIDAYS = [
+            { date: "2025-10-13", name: "Traslado Fiesta Nacional" },
+            { date: "2025-10-31", name: "Día del Docente" },
+            { date: "2025-11-01", name: "Todos los Santos" },
+            { date: "2025-12-06", name: "Constitución" },
+            { date: "2025-12-08", name: "Inmaculada Concepción" },
+            { date: "2026-04-23", name: "Día de Castilla y León" },
+            { date: "2026-04-24", name: "Puente Día de Castilla y León" },
+            { date: "2026-05-01", name: "Día del Trabajo" },
+        ];
+
+        // --- LÓGICA DE APOYO ---
+        const checkIsHoliday = (date) => {
+            const day = date.getDay();
+            if (day === 0 || day === 6) return "Fin de semana";
+            const iso = date.toISOString().split('T')[0];
+            const single = SINGLE_HOLIDAYS.find(h => h.date === iso);
+            if (single) return single.name;
+            for (const r of HOLIDAY_RANGES) {
+                if (iso >= r.start && iso <= r.end) return r.name;
+            }
+            return null;
+        };
+
+        const getSecondsToday = (d) => d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+        const parseTimeToSeconds = (s) => {
+            const [h, m] = s.split(':').map(Number);
+            return h * 3600 + m * 60;
+        };
+
+        const formatCountdown = (totalSeconds) => {
+            const h = Math.floor(totalSeconds / 3600);
+            const m = Math.floor((totalSeconds % 3600) / 60);
+            const s = totalSeconds % 60;
+            return `${h > 0 ? h + 'h ' : ''}${m}m ${String(s).padStart(2, '0')}s`;
+        };
+
+        // --- APLICACIÓN ---
+        function App() {
+            const [now, setNow] = useState(new Date());
+            const [soundEnabled, setSoundEnabled] = useState(false);
+            const [isRinging, setIsRinging] = useState(false);
+            const [lastRungTime, setLastRungTime] = useState(null);
+            const audioContext = useRef(null);
+
+            const holidayName = useMemo(() => checkIsHoliday(now), [now.toDateString()]);
+
+            const { nextEvent, secondsToNext } = useMemo(() => {
+                const currentSecs = getSecondsToday(now);
+                const next = DAILY_SCHEDULE.find(item => parseTimeToSeconds(item.time) > currentSecs);
+                return { 
+                    nextEvent: next || null, 
+                    secondsToNext: next ? parseTimeToSeconds(next.time) - currentSecs : 0 
+                };
+            }, [now]);
+
+            const triggerBell = useCallback((seconds) => {
+                if (!audioContext.current || !soundEnabled) return;
+                
+                setIsRinging(true);
+                const ctx = audioContext.current;
+                const oscillator = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + seconds);
+                
+                gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + seconds);
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                
+                oscillator.start();
+                oscillator.stop(ctx.currentTime + seconds);
+                
+                if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+                setTimeout(() => setIsRinging(false), seconds * 1000);
+            }, [soundEnabled]);
+
+            const enableAudio = () => {
+                if (!audioContext.current) {
+                    audioContext.current = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioContext.current.state === 'suspended') {
+                    audioContext.current.resume();
+                }
+                setSoundEnabled(true);
+                triggerBell(0.3); // Sonido de confirmación
+            };
+
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    const d = new Date();
+                    setNow(d);
+                    
+                    const timeStr = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+                    
+                    // Comprobar si es el segundo exacto 00 para que suene
+                    if (d.getSeconds() === 0 && !holidayName) {
+                        const eventAtThisTime = DAILY_SCHEDULE.find(s => s.time === timeStr);
+                        if (eventAtThisTime && lastRungTime !== timeStr) {
+                            triggerBell(eventAtThisTime.durationSeconds);
+                            setLastRungTime(timeStr);
+                        }
+                    }
+                }, 1000);
+                return () => clearInterval(interval);
+            }, [holidayName, lastRungTime, triggerBell]);
+
+            return (
+                <div className="flex flex-col min-h-screen">
+                    <header className="bg-indigo-600 text-white p-5 shadow-lg flex justify-between items-center sticky top-0 z-50">
+                        <div>
+                            <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
+                                <span className={isRinging ? 'animate-ring' : ''}>🔔</span>
+                                TIMBRE OFICIAL
+                            </h1>
+                            <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest">Sincronización Automática</p>
+                        </div>
+                        <button 
+                            onClick={enableAudio} 
+                            className={`px-4 py-2 rounded-xl font-bold transition-all shadow-md active:scale-95 ${soundEnabled ? 'bg-emerald-500 text-white' : 'bg-white text-indigo-600 ring-4 ring-indigo-400/30'}`}
+                        >
+                            {soundEnabled ? '🔊 SONIDO ON' : '🔇 ACTIVAR SONIDO'}
+                        </button>
+                    </header>
+
+                    <main className="max-w-2xl mx-auto w-full p-4 space-y-6">
+                        {/* Reloj Grande */}
+                        <div className="bg-white rounded-[2rem] p-8 shadow-xl text-center border-b-4 border-slate-200 mt-2">
+                            <p className="text-slate-400 font-black text-xs uppercase tracking-widest mb-2">Hora Actual Internet</p>
+                            <h2 className="text-6xl md:text-8xl font-black text-slate-800 tabular-nums clock-shadow">
+                                {now.toLocaleTimeString('es-ES', { hour12: false })}
+                            </h2>
+                            <p className="text-indigo-600 font-bold mt-3 capitalize text-lg">
+                                {now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+                            </p>
+                        </div>
+
+                        {/* Estado: Festivo o Próximo Evento */}
+                        {holidayName ? (
+                            <div className="bg-orange-500 text-white p-6 rounded-[2rem] shadow-lg flex items-center gap-5">
+                                <span className="text-5xl">🏖️</span>
+                                <div>
+                                    <p className="font-black text-2xl">DÍA NO LECTIVO</p>
+                                    <p className="font-bold opacity-90 text-lg">{holidayName}</p>
+                                </div>
+                            </div>
+                        ) : nextEvent && (
+                            <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-2xl relative overflow-hidden ring-4 ring-indigo-500/20">
+                                <div className="relative z-10 flex flex-col md:flex-row justify-between items-center md:items-end gap-4">
+                                    <div className="text-center md:text-left">
+                                        <p className="text-indigo-400 font-black text-[10px] uppercase tracking-[0.2em] mb-3 text-center md:text-left">Siguiente Toque</p>
+                                        <h3 className="text-4xl font-black mb-1">{nextEvent.event}</h3>
+                                        <p className="text-indigo-300 font-bold text-lg">Programado para las {nextEvent.time}</p>
+                                    </div>
+                                    <div className="text-center md:text-right bg-white/10 p-4 rounded-2xl border border-white/10 w-full md:w-auto">
+                                        <p className="text-4xl font-black tabular-nums">{formatCountdown(secondsToNext)}</p>
+                                        <p className="text-indigo-400 text-[10px] font-black uppercase mt-1">Faltan para el timbre</p>
+                                    </div>
+                                </div>
+                                <div className="absolute -right-4 -bottom-4 opacity-5 pointer-events-none">
+                                    <span className="text-[120px]">⏱️</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Listado de Horarios */}
+                        <div className="bg-white rounded-[2rem] p-6 shadow-lg border border-slate-200">
+                            <h4 className="font-black text-slate-800 mb-5 flex items-center gap-2 text-xl px-2">
+                                📅 Horario de la Jornada
+                            </h4>
+                            <div className="space-y-2">
+                                {DAILY_SCHEDULE.map((s, i) => {
+                                    const sSecs = parseTimeToSeconds(s.time);
+                                    const nSecs = getSecondsToday(now);
+                                    const isPast = sSecs < nSecs;
+                                    const isNow = nextEvent?.time === s.time;
+                                    
+                                    return (
+                                        <div key={i} className={`flex items-center p-4 rounded-2xl border-2 transition-all ${
+                                            isNow ? 'bg-indigo-50 border-indigo-500 shadow-md' : 
+                                            isPast ? 'bg-slate-50 border-transparent opacity-30 scale-95' : 
+                                            'bg-white border-slate-100'
+                                        }`}>
+                                            <span className={`text-2xl font-black w-20 tabular-nums ${isNow ? 'text-indigo-600' : 'text-slate-400'}`}>
+                                                {s.time}
+                                            </span>
+                                            <div className="flex-1 ml-4 border-l-2 border-slate-100 pl-4">
+                                                <p className={`font-black text-lg ${isNow ? 'text-slate-900' : 'text-slate-600'}`}>{s.event}</p>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Timbre: {s.durationSeconds}s</p>
+                                            </div>
+                                            {isNow && (
+                                                <div className="flex items-center gap-2 text-indigo-600 font-black animate-pulse text-xs bg-indigo-100 px-3 py-1 rounded-full">
+                                                    <span>PRÓXIMO</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </main>
+
+                    <footer className="p-10 text-center text-slate-400">
+                        <p className="text-[10px] font-black uppercase tracking-[0.4em]">TIMBRE v3.5 FINAL</p>
+                        <p className="text-[9px] mt-2 font-bold opacity-50">Sincronizado con Reloj de Sistema Operativo</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

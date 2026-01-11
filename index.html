@@ -1,0 +1,220 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TIMBRE ESCOLAR PRO</title>
+    <!-- Frameworks vía CDN para máxima compatibilidad -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Outfit', sans-serif; 
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            color: #1e293b;
+        }
+        .bell-ring { 
+            animation: ring 0.6s ease-in-out infinite; 
+            display: inline-block; 
+        }
+        @keyframes ring {
+            0%, 100% { transform: rotate(0); }
+            15% { transform: rotate(20deg); }
+            30% { transform: rotate(-20deg); }
+            45% { transform: rotate(15deg); }
+            60% { transform: rotate(-15deg); }
+        }
+        .schedule-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .schedule-list::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 10px;
+        }
+        .status-pill {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // Horario Completo Actualizado
+        const HORARIO = [
+            { t: "08:25", n: "AVISO ENTRADA", d: 10 }, { t: "08:30", n: "ENTRADA CLASE", d: 15 },
+            { t: "09:20", n: "AVISO CAMBIO", d: 10 }, { t: "09:25", n: "CAMBIO CLASE", d: 15 },
+            { t: "10:15", n: "AVISO CAMBIO", d: 10 }, { t: "10:20", n: "CAMBIO CLASE", d: 15 },
+            { t: "11:10", n: "SALIDA RECREO", d: 15 }, { t: "11:35", n: "AVISO FIN RECREO", d: 10 },
+            { t: "11:40", n: "ENTRADA RECREO", d: 15 }, { t: "12:30", n: "AVISO CAMBIO", d: 10 },
+            { t: "12:35", n: "CAMBIO CLASE", d: 15 }, { t: "13:25", n: "AVISO CAMBIO", d: 10 },
+            { t: "13:30", n: "CAMBIO CLASE", d: 15 }, { t: "14:20", n: "AVISO CAMBIO", d: 10 },
+            { t: "14:25", n: "CAMBIO CLASE", d: 15 }, { t: "15:15", n: "FIN JORNADA (M)", d: 15 },
+            { t: "15:55", n: "AVISO TARDE", d: 10 }, { t: "16:00", n: "ENTRADA TARDE", d: 15 },
+            { t: "16:50", n: "AVISO CAMBIO", d: 10 }, { t: "16:55", n: "CAMBIO CLASE", d: 15 },
+            { t: "17:45", n: "AVISO CAMBIO", d: 10 }, { t: "17:50", n: "CAMBIO CLASE", d: 15 },
+            { t: "18:40", n: "SALIDA RECREO (T)", d: 15 }, { t: "18:55", n: "AVISO FIN RECREO (T)", d: 10 },
+            { t: "19:00", n: "ENTRADA TARDE", d: 15 }, { t: "19:50", n: "AVISO CAMBIO", d: 10 },
+            { t: "19:55", n: "CAMBIO CLASE", d: 15 }, { t: "20:45", n: "AVISO CAMBIO", d: 10 },
+            { t: "20:50", n: "CAMBIO CLASE", d: 15 }, { t: "21:40", n: "FIN JORNADA (T)", d: 15 }
+        ];
+
+        function App() {
+            const [now, setNow] = useState(new Date());
+            const [audioEnabled, setAudioEnabled] = useState(false);
+            const [isRinging, setIsRinging] = useState(false);
+            const audioCtxRef = useRef(null);
+
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    const d = new Date();
+                    setNow(d);
+                    
+                    const timeStr = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+                    if (d.getSeconds() === 0) {
+                        const event = HORARIO.find(h => h.t === timeStr);
+                        if (event && audioEnabled) triggerBell(event.d);
+                    }
+                }, 1000);
+                return () => clearInterval(interval);
+            }, [audioEnabled]);
+
+            const triggerBell = (duration) => {
+                if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+                
+                setIsRinging(true);
+                const osc = audioCtxRef.current.createOscillator();
+                const gain = audioCtxRef.current.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, audioCtxRef.current.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(440, audioCtxRef.current.currentTime + duration);
+                
+                gain.gain.setValueAtTime(0.5, audioCtxRef.current.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtxRef.current.currentTime + duration);
+                
+                osc.connect(gain);
+                gain.connect(audioCtxRef.current.destination);
+                
+                osc.start();
+                osc.stop(audioCtxRef.current.currentTime + duration);
+                
+                setTimeout(() => setIsRinging(false), duration * 1000);
+            };
+
+            const nextEvent = useMemo(() => {
+                const totalSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+                return HORARIO.find(h => {
+                    const [hh, mm] = h.t.split(':').map(Number);
+                    return (hh * 3600 + mm * 60) > totalSeconds;
+                }) || null;
+            }, [now]);
+
+            return (
+                <div className="max-w-xl mx-auto min-h-screen flex flex-col p-4 md:p-8">
+                    {/* Header con Estado */}
+                    <header className="flex justify-between items-center mb-10">
+                        <div className="flex items-center gap-3">
+                            <div className={`p-3 rounded-2xl ${isRinging ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-indigo-600 shadow-sm'}`}>
+                                <span className={`text-2xl ${isRinging ? 'bell-ring' : ''}`}>🔔</span>
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-black tracking-tight text-slate-800">TIMBRE WEB</h1>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sincronización Escolar</p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={() => { setAudioEnabled(true); triggerBell(0.2); }}
+                            className={`px-5 py-2.5 rounded-2xl font-bold text-sm transition-all transform active:scale-95 status-pill ${
+                                audioEnabled ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white animate-pulse'
+                            }`}
+                        >
+                            {audioEnabled ? '🔊 SONIDO ON' : '🔇 ACTIVAR SONIDO'}
+                        </button>
+                    </header>
+
+                    {/* Reloj de Grandes Dimensiones */}
+                    <section className="bg-white rounded-[2.5rem] p-12 shadow-2xl text-center mb-8 border-b-8 border-indigo-100">
+                        <p className="text-indigo-400 font-black text-xs uppercase tracking-[0.3em] mb-3">Hora del Centro</p>
+                        <h2 className="text-7xl md:text-8xl font-black text-slate-800 tabular-nums leading-none tracking-tighter">
+                            {now.toLocaleTimeString('es-ES', { hour12: false })}
+                        </h2>
+                        <div className="mt-6 inline-flex items-center gap-2 bg-indigo-50 px-4 py-1.5 rounded-full text-indigo-600 font-bold text-sm">
+                            <span className="w-2 h-2 bg-indigo-600 rounded-full animate-ping"></span>
+                            {now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
+                        </div>
+                    </section>
+
+                    {/* Tarjeta de Próximo Evento - Gran Separación */}
+                    {nextEvent && (
+                        <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden mb-12 ring-8 ring-white/50">
+                            <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
+                                <div className="text-center md:text-left">
+                                    <p className="text-indigo-400 font-black text-[10px] uppercase tracking-widest mb-2">Próxima Señal</p>
+                                    <h3 className="text-3xl font-black mb-1">{nextEvent.n}</h3>
+                                    <p className="text-indigo-200 font-semibold text-lg">Programada: {nextEvent.t}</p>
+                                </div>
+                                <div className="bg-white/10 px-6 py-4 rounded-3xl border border-white/10 backdrop-blur-md">
+                                    <p className="text-4xl font-black tabular-nums text-white">
+                                        {Math.max(0, Math.floor((nextEvent.t.split(':')[0]*3600 + nextEvent.t.split(':')[1]*60 - (now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()))/60))}m
+                                    </p>
+                                    <p className="text-indigo-400 text-[10px] font-black uppercase tracking-tighter text-center">Restantes</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Lista de Horarios con Separación Clara */}
+                    <div className="flex-1 bg-white rounded-[2.5rem] p-8 shadow-xl flex flex-col border border-slate-200">
+                        <h4 className="font-black text-slate-400 text-xs tracking-widest uppercase mb-6 px-4">Calendario de hoy</h4>
+                        <div className="space-y-4 overflow-y-auto max-h-[400px] pr-4 schedule-list">
+                            {HORARIO.map((h, i) => {
+                                const [hH, hM] = h.t.split(':').map(Number);
+                                const isNext = nextEvent?.t === h.t;
+                                const isPast = (hH * 3600 + hM * 60) < (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds());
+
+                                return (
+                                    <div key={i} className={`flex justify-between items-center p-5 rounded-2xl border-2 transition-all duration-300 ${
+                                        isNext ? 'border-indigo-600 bg-indigo-50 shadow-md scale-[1.03] translate-x-2' : 
+                                        isPast ? 'border-slate-50 bg-slate-50 opacity-30 grayscale' : 
+                                        'border-slate-50 bg-slate-50 hover:border-slate-200'
+                                    }`}>
+                                        <div className="flex items-center gap-5">
+                                            <span className={`text-2xl font-black tabular-nums ${isNext ? 'text-indigo-600' : 'text-slate-300'}`}>
+                                                {h.t}
+                                            </span>
+                                            <div className="h-8 w-[2px] bg-slate-200"></div>
+                                            <span className={`font-bold ${isNext ? 'text-slate-900' : 'text-slate-500'}`}>
+                                                {h.n}
+                                            </span>
+                                        </div>
+                                        {isNext && (
+                                            <span className="bg-indigo-600 text-white text-[9px] font-black px-2.5 py-1 rounded-lg animate-pulse">
+                                                SIGUIENTE
+                                            </span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    
+                    <footer className="mt-10 mb-6 text-center">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.5em]">TIMBRE SINCRO V5.0 • UTC+1</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
